@@ -1,0 +1,31 @@
+# Private AI instructions (never commit or push)
+/AGENTS_PRIVATE.md
+
+# Gradle caches and generated output
+.gradle/
+.gradle-user-home/
+build/
+out/
+bin/
+*.class
+
+# IDE files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+
+# Local environment and logs
+.env
+.env.*
+!.env.example
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Gradle Wrapper JAR must remain versionable
+!gradle/wrapper/gradle-wrapper.jar
