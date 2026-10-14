@@ -8,26 +8,28 @@ The first version focuses on:
 
 - Managing property details, pricing, and stay rules.
 - Creating and viewing reservations.
-- Updating reservation details.
-- Cancelling reservations according to the cancellation policy.
-- Checking availability and preventing double bookings.
+- Checking reservation dates, guest capacity, minimum stay, and existing overlaps.
 
-The application is intended for the property manager. The proposed first version is a local demo, accessed through Swagger UI or another API client.
+The application is intended for the property manager and is currently a local demo, accessed through Swagger UI or another API client.
 
-Authentication, Booking.com integration, seasonal pricing, payment processing, reporting, and a frontend are outside the proposed MVP.
+Authentication, Booking.com integration, seasonal pricing, payment processing, reporting, and a frontend are not implemented.
 
 ### Current status
 
-The project currently implements the property configuration slice:
+The project currently implements property configuration and basic reservation creation/listing:
 
-- Java 21, Spring Boot 4.1.1, Gradle Wrapper 9.7.1, Lombok, and JUnit 6 dependencies.
-- A `Property` JPA entity mapped to the PostgreSQL `properties` table.
-- Flyway migrations V1 and V2 to create the table and insert Villa Tusia.
+- Java 21, Spring Boot 4.1.1, Gradle Wrapper 9.7.1, Lombok, Mockito, and JUnit 6.
+- `Property` and `Reservation` JPA entities mapped to PostgreSQL tables.
+- Flyway migrations V1–V5 create and update the property/reservation schema and insert Villa Tusia.
 - `GET /api/properties/{propertyId}` and full-replacement `PUT /api/properties/{propertyId}` endpoints.
-- Request validation, property lookup, and structured HTTP error responses.
-- Local PostgreSQL configuration through Docker Compose and `.env.
+- `POST /api/properties/{propertyId}/reservations` creates and confirms a reservation immediately.
+- `GET /api/properties/{propertyId}/reservations` lists reservations ordered by check-in date.
+- Request validation, property lookup, business-rule checks, and structured HTTP error responses.
+- Springdoc OpenAPI and Swagger UI for browsing and manually calling endpoints.
+- Eleven unit tests in `ReservationServiceTest`; they use Mockito mocks and do not connect to PostgreSQL.
+- Local PostgreSQL configuration through Docker Compose and `.env`.
 
-Reservation behavior, automated application tests, authentication, frontend, and external booking integration are not implemented yet. The remaining sections describe the planned reservation feature and identify decisions that still need agreement.
+Reservation editing/cancellation, authentication, integration/API tests, frontend, and external booking integration are not implemented. This is a local learning demo and must not be exposed publicly with guest data because the API has no authentication.
 
 ## 2. Application Structure
 
@@ -56,17 +58,17 @@ PostgreSQL
 | Component | Responsibility | Example |
 |---|---|---|
 | Controller | Receives HTTP requests and returns responses. | Accepts a request to create a reservation. |
-| Service | Applies business rules and coordinates the operation. | Checks availability and calculates the total. |
+| Service | Applies business rules and coordinates the operation. | Checks stay length and availability, then calculates the total. |
 | Repository | Reads and writes database records. | Finds reservations for a property. |
 | Entity | Represents stored business data and its valid state. | `Property` or `Reservation`. |
 | DTO | Defines the data accepted or returned by the API. | Reservation dates and guest count. |
-| Exception handler | Converts errors into consistent HTTP responses. | Returns a booking-conflict error. |
+| Exception handler | Converts errors into consistent HTTP responses. | Returns a structured booking-conflict error. |
 
-Controllers will not contain pricing or availability logic. Entities will not be returned directly as API responses.
+Controllers will not contain pricing or availability logic. Entities will not be returned directly as API responses; controllers map them to response DTOs.
 
 ### Package organization
 
-Code will be grouped by feature:
+Code is grouped by feature:
 
 ```text
 com.villatusia.pms
@@ -76,7 +78,7 @@ com.villatusia.pms
     └── exception
 ```
 
-Each feature will contain its own controller, service, repository, entity, and DTOs as needed.
+Each feature contains its own controller, service, repository, entity, and DTOs as needed.
 
 This keeps related code together while separating responsibilities.
 
@@ -94,7 +96,7 @@ The MVP does not need microservices, CQRS, Event Sourcing, Kafka, Redis, or Hexa
 
 A property represents the entire accommodation being rented.
 
-Its planned fields include:
+Its stored fields are:
 
 - ID.
 - Name, location, and description.
@@ -123,7 +125,7 @@ Initial settings:
 
 A reservation represents one booking of the entire property.
 
-Its planned fields include:
+Its stored fields are:
 
 - ID and property reference.
 - Main guest details.
@@ -131,11 +133,10 @@ Its planned fields include:
 - Guest count.
 - Agreed nightly rate.
 - Total amount and currency.
-- Booking source.
 - Status.
 - Creation and update timestamps.
 
-The exact guest fields will be agreed before implementation.
+The API requires a guest name, email, and phone number. Use synthetic values during development and testing; do not put real guest details in this portfolio project.
 
 ### Relationship
 
@@ -149,12 +150,12 @@ Guests do not need application accounts in the proposed MVP.
 
 ### Reservation status
 
-The proposed initial statuses are:
+The implemented reservation statuses are:
 
 - `CONFIRMED`: the reservation is valid and blocks its dates.
 - `CANCELLED`: the reservation remains in the history but no longer blocks availability.
 
-A valid new reservation becomes confirmed immediately. It does not wait for manual acceptance.
+A valid new reservation becomes confirmed immediately. It does not wait for manual acceptance. The enum contains `CANCELLED`, but there is no cancellation endpoint yet.
 
 A separate `COMPLETED` status will only be added if a feature requires it.
 
@@ -176,7 +177,7 @@ Nights:    3
 
 Another booking can start on August 15 because the previous guests leave by 11:00 and the next guests arrive from 15:00.
 
-Reservations must respect the applicable guest capacity and minimum stay.
+The reservation service checks that the property is active, the guest count is within capacity, and the stay meets the configured minimum. A shorter stay is rejected before it is saved.
 
 Availability is checked for specific dates. It is not stored as a single available/unavailable flag.
 
@@ -198,7 +199,7 @@ When a reservation is created, the current property rate is saved in that reserv
 
 Changing the property’s rate later does not change existing reservations.
 
-When reservation dates change:
+If reservation date editing is added, the proposed flow is:
 
 1. Check the new dates and availability.
 2. Calculate the new number of nights.
@@ -212,38 +213,21 @@ Seasonal pricing is deferred.
 
 ### Payment
 
-The full reservation amount is due on the check-in date.
-
-This does not mean that the application charges a card or knows that the payment has been collected. Payment processing is outside the MVP.
+The application does not record or process payments. Payment requirements need agreement before a payment feature is added.
 
 ### Cancellation
 
-The business requirement prohibits cancellation within the final 14 days before arrival.
+The property stores a 14-day cancellation notice setting. Cancellation behavior and the exact deadline boundary are not implemented yet.
 
-The proposed exact interpretation is:
-
-```text
-Last cancellation date = Check-in date minus 14 days
-```
-
-Cancellation is allowed through that date, using the local date in `Europe/Athens`.
-
-For arrival on August 20:
-
-- August 6: cancellation is allowed.
-- August 7: cancellation is rejected.
-
-**This exact boundary still requires approval.**
-
-Cancellation changes the status to `CANCELLED`; it does not delete the reservation.
+When a cancellation endpoint is designed, cancellation should change the status to `CANCELLED` rather than delete the reservation. The allowed deadline boundary still needs to be agreed before implementation.
 
 ### Changes to existing reservations
 
-A failed modification must leave the previous reservation unchanged.
+A failed modification must leave the previous reservation unchanged. Reservation editing is not implemented yet.
 
-Changes to the property’s rate or minimum-stay settings must not automatically modify existing reservations.
+The creation flow stores the agreed nightly rate on the reservation. Changes to the property’s rate or minimum-stay settings do not automatically modify existing reservations.
 
-The following rules remain open:
+The following rules need agreement before reservation editing is added:
 
 - Which changes are allowed after check-in.
 - Whether cancelled reservations can be edited.
@@ -256,49 +240,51 @@ These rules will be agreed before implementing the corresponding operations.
 
 ## 5. Validation and Error Handling
 
-The application will validate data at three levels:
+The application validates data at three levels:
 
 | Level | Purpose |
 |---|---|
 | Request validation | Reject missing or malformed input. |
 | Business validation | Enforce reservation rules. |
-| Database constraints | Protect stored data, including concurrent writes. |
+| Database constraints | Protect stored data and enforce rules at the persistence boundary. |
 
 For example, Bean Validation can reject a missing check-in date. The Service checks whether the requested stay is available.
 
 ### Business exceptions
 
-Application-specific business errors will share a common base class:
+Application-specific business errors share a common base class:
 
 ```text
 RuntimeException
 └── BusinessException
     ├── PropertyNotFoundException
-    ├── ReservationNotFoundException
-    ├── ReservationConflictException
-    └── CancellationNotAllowedException
+    ├── PropertyInactiveException
+    ├── InvalidReservationDatesException
+    ├── GuestCountExceedsPropertyLimitException
+    ├── MinimumStayNotMetException
+    └── ReservationUnavailableException
 ```
 
-Each business exception will have a stable error code and a safe, understandable message.
+Each business exception has a stable error code and a safe, understandable message.
 
-A `GlobalExceptionHandler` will handle errors centrally using `@RestControllerAdvice`.
+A `GlobalExceptionHandler` handles errors centrally using `@RestControllerAdvice`.
 
 Framework exceptions, such as request-validation errors, will also be handled centrally. They do not need to inherit from `BusinessException`.
 
 ### API responses
 
-The proposed error format is Spring `ProblemDetail` with an additional `code` field.
+The error format is Spring `ProblemDetail` with an additional `code` field.
 
 Example:
 
 ```json
 {
   "type": "about:blank",
-  "title": "Conflict",
+  "title": "Reservation dates unavailable",
   "status": 409,
-  "detail": "The property is unavailable for the selected dates.",
-  "code": "RESERVATION_DATE_CONFLICT",
-  "instance": "/api/reservations"
+  "detail": "The property is already reserved for the selected dates.",
+  "code": "RESERVATION_DATES_UNAVAILABLE",
+  "instance": "/api/properties/1/reservations"
 }
 ```
 
@@ -313,17 +299,17 @@ Typical HTTP statuses:
 | Conflicting reservation or disallowed operation | `409 Conflict` |
 | Unexpected application failure | `500 Internal Server Error` |
 
-Error messages will be written in English. Responses will not expose SQL, credentials, or stack traces.
+Error messages are in English. Responses do not expose SQL, credentials, or stack traces.
 
 ## 6. Database and Testing
 
 ### PostgreSQL and Flyway
 
-PostgreSQL will store properties and reservations.
+PostgreSQL stores properties and reservations.
 
 It provides relationships, transactions, and constraints that support reliable booking data.
 
-Flyway will manage database structure through versioned migration files. Hibernate will map Java entities to that structure.
+Flyway manages database structure through versioned migration files. Hibernate maps Java entities to that structure.
 
 ### Transactions
 
@@ -337,15 +323,14 @@ Checking availability before saving is necessary, but not sufficient.
 
 Two requests might both find the same dates available before either saves a reservation.
 
-The proposed solution is:
+The current implementation:
 
-- Check availability in the Service.
-- Save within a transaction.
-- Add a PostgreSQL exclusion constraint that prevents overlapping confirmed reservations for the same property.
+- Checks availability in the Service.
+- Saves the new reservation inside a transaction.
 
-An exclusion constraint is a database rule that rejects conflicting date ranges. Adjacent stays remain allowed, and cancelled reservations do not block dates.
+This check alone does not prevent a race if two requests check the same dates at the same time. A PostgreSQL exclusion constraint has been proposed but is not implemented. Until database-level protection is added, concurrent requests may create overlapping confirmed reservations. Adjacent stays are allowed by the current overlap query, and only confirmed reservations block dates.
 
-The exact constraint will be explained and approved before implementation.
+The constraint design should be explained and agreed before implementation.
 
 ### Conflicting updates
 
@@ -368,7 +353,7 @@ Data        -> Named volume mounted at /var/lib/postgresql
 
 The database is `villa_tusia`. The local bootstrap user, password, and host port are supplied through the ignored `.env` file. `.env.example` documents the required variables without a real password.
 
-Flyway manages the current property schema: V1 creates the `properties` table and V2 inserts the initial Villa Tusia row. The application enables Flyway and uses Hibernate schema validation. PostgreSQL must be available when the application starts.
+Flyway manages the current schema: V1 creates the `properties` table, V2 inserts Villa Tusia, V3 creates the `reservations` table, V4 changes the cancellation notice column type, and V5 changes the small-integer columns to integers to match the Java entity types. Applied migrations must remain unchanged because Flyway checks their recorded checksums. The application enables Flyway and uses Hibernate schema validation. PostgreSQL must be available when the application starts.
 
 The official image initializes the configured PostgreSQL user as a bootstrap administrator. This is a local development account, not an application login or production access model.
 
@@ -380,23 +365,18 @@ Credentials and real guest data must not be committed to the repository. See `RE
 
 | Test type | What it verifies |
 |---|---|
-| Unit tests | Night counting, price calculations, cancellation rules. |
-| Database integration tests | Queries, migrations, constraints, transactions, concurrent writes. |
-| API tests | Requests, validation, HTTP statuses, and error responses. |
+| Unit tests (implemented) | Reservation service rules using Mockito mocks; they do not connect to PostgreSQL. |
+| Database integration tests (future) | Queries, migrations, constraints, transactions, and concurrent writes against PostgreSQL. |
+| API tests (future) | Requests, validation, HTTP statuses, and error responses through the application. |
 
-Important scenarios include:
+The current `ReservationServiceTest` contains eleven unit tests for:
 
-- Valid reservation.
-- Invalid date range.
-- Invalid guest count.
-- Overlapping reservations.
-- Adjacent reservations.
-- Cancelled reservations not blocking availability.
-- Preserved nightly rate after a price change.
-- Correct total after a date change.
-- Cancellation on either side of the deadline.
-- Failed changes leaving the original reservation intact.
-- Concurrent attempts to book the same dates.
+- Reading a property's reservations, returning an empty list, and rejecting a missing property.
+- Calculating the total from the nightly rate and number of nights.
+- Rejecting invalid dates, unavailable dates, guest counts above capacity, and inactive or missing properties.
+- Rejecting stays below the configured minimum and accepting a stay exactly at the minimum.
+
+Still-important future scenarios include adjacent stays, cancelled reservations not blocking availability, cancellation deadlines, preservation of the agreed nightly rate after a property price change, reservation edits, and concurrent booking attempts.
 
 Date-sensitive tests will use a controlled clock.
 
