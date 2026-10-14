@@ -1,37 +1,40 @@
 # Villa Tusia PMS
 
-A Java backend portfolio project for managing a vacation rental property and its bookings.
+A beginner-friendly Java REST API for managing the Villa Tusia vacation rental and its reservations. It is a single Spring Boot application backed by PostgreSQL.
 
-## Current implementation
+## Current features
 
-- Java 21, Spring Boot 4.1.1, Gradle 9.7.1, and JUnit 6 dependencies.
-- PostgreSQL persistence through Spring Data JPA and Flyway migrations.
-- Read one property with `GET /api/properties/{propertyId}`.
-- Replace the complete property configuration with `PUT /api/properties/{propertyId}`.
-- Validate incoming property data and return structured errors for missing properties and invalid requests.
-- Create the `properties` table and insert Villa Tusia through Flyway migrations V1 and V2.
+- Read and update the property's settings.
+- Create a confirmed reservation for the whole property, without manual approval.
+- List a property's reservations, ordered by check-in date.
+- Check that the property is active, the dates are valid and available, guest count is within capacity, and the stay meets the property's minimum length.
+- Save the agreed nightly rate and total in each reservation. For example, three nights at EUR 100.00 total EUR 300.00.
+- Return structured errors for invalid requests and business-rule failures.
+- Apply database changes with Flyway migrations V1–V5 and validate the entity/table mapping with Hibernate.
+- Explore and call the endpoints through Swagger UI.
 
-Reservation endpoints, authentication, a frontend, seasonal pricing, payments, and Booking.com integration are not implemented yet. Automated application tests have not been added yet.
+The API currently supports reading reservations and creating them. Editing and cancelling reservations are not implemented. Authentication is not implemented; run this as a local demo with synthetic guest data, and do not expose it publicly or use real guest details.
 
 ## Villa Tusia settings
 
 | Setting | Value |
 |---|---|
+| Rental | The whole property |
 | Maximum guests | 2 |
 | Base nightly rate | EUR 100.00 |
 | Minimum stay | 1 night |
 | Check-in | 15:00 |
 | Check-out | 11:00 |
 | Time zone | `Europe/Athens` |
-| Cancellation notice | 14 days |
+| Cancellation notice setting | 14 days |
 
-The property is rented as one whole accommodation. Reservation date and cancellation rules will be implemented with the reservation feature.
+The 14-day cancellation notice is stored as a property setting. A reservation cancellation endpoint and its business rules are not implemented yet.
 
 ## Requirements
 
 - JDK 21 (a full JDK, not only a JRE)
 - Docker Desktop with the Linux container engine and Docker Compose
-- Internet access for initial dependency and PostgreSQL image downloads
+- Internet access the first time Gradle dependencies or the PostgreSQL image are needed
 
 The included Gradle Wrapper means a global Gradle installation is not required.
 
@@ -43,7 +46,7 @@ The local `.env` file is ignored by Git. If you need to create it, copy the exam
 Copy-Item .env.example .env
 ```
 
-Edit `.env` and set a non-empty `POSTGRES_PASSWORD`. Keep any existing local values. Never commit `.env`; commit only the placeholder template `.env.example`.
+Set a non-empty `POSTGRES_PASSWORD` in `.env`. Keep local credentials in `.env`; never commit that file. Commit only the placeholder template `.env.example`.
 
 ## Start PostgreSQL
 
@@ -67,53 +70,71 @@ With PostgreSQL running and `.env` configured, use Windows PowerShell:
 On macOS/Linux:
 
 ```sh
-sh ./gradlew bootRun
+./gradlew bootRun
 ```
 
 Flyway applies pending migrations on application startup. The application uses `spring.jpa.hibernate.ddl-auto=validate`, so Hibernate checks entity/table compatibility instead of creating tables.
 
-## API examples
+## Swagger UI
 
-Read the property with ID 1:
+With the application running, open [http://localhost:8080/swagger-ui/index.html](http://localhost:8080/swagger-ui/index.html). Expand an endpoint, choose **Try it out**, enter the path parameter (for example, `propertyId` = `1`) and choose **Execute**. The page describes the actual API and lets you inspect response codes and JSON.
+
+## API endpoints
+
+| Method | Path | Purpose |
+|---|---|---|
+| `GET` | `/api/properties/{propertyId}` | Read property settings. |
+| `PUT` | `/api/properties/{propertyId}` | Replace the editable property settings; send the complete request body. |
+| `GET` | `/api/properties/{propertyId}/reservations` | List that property's reservations. An existing property with no reservations returns `[]`. |
+| `POST` | `/api/properties/{propertyId}/reservations` | Create and immediately confirm a reservation. |
+
+Example request to create a reservation (use synthetic details and dates that are free in your local database):
 
 ```http
-GET /api/properties/1
-```
-
-Update it by sending the complete editable property representation:
-
-```http
-PUT /api/properties/1
+POST /api/properties/1/reservations
 Content-Type: application/json
 ```
 
 ```json
 {
-  "name": "Villa Tusia",
-  "location": "Greece",
-  "description": "Vacation home with sea view, approximately 500 meters from the sea.",
-  "maxGuests": 2,
-  "baseNightlyRate": 100.00,
-  "currency": "EUR",
-  "minimumStayNights": 1,
-  "checkInTime": "15:00",
-  "checkOutTime": "11:00",
-  "timeZone": "Europe/Athens",
-  "cancellationNoticeDays": 14,
-  "active": true
+  "guestName": "Test Guest",
+  "guestEmail": "test@example.com",
+  "guestPhone": "0000000000",
+  "checkInDate": "2027-07-20",
+  "checkOutDate": "2027-07-23",
+  "guestCount": 2
 }
 ```
 
-A successful request returns a `PropertyResponse`. A missing property returns HTTP 404. Invalid request fields return HTTP 400 with a validation code and field messages.
+The service calculates the number of nights from the dates. It reads the nightly rate from the property, saves that agreed rate on the reservation, and calculates the total. With the current base rate, three nights total EUR 300.00. An overlapping confirmed reservation or a stay shorter than the property's minimum is rejected.
+
+Successful reads and property updates return `200 OK`; a reservation creation returns `201 Created`. Invalid input and a stay below the minimum return `400 Bad Request`, a missing property returns `404 Not Found`, and unavailable dates or an inactive property return `409 Conflict`.
+
+## Tests
+
+`ReservationServiceTest` contains 11 unit tests. They use Mockito mocks, so they test service rules without connecting to PostgreSQL. Run the test suite from Windows PowerShell with:
+
+```powershell
+.\gradlew.bat test
+```
+
+On macOS/Linux:
+
+```sh
+./gradlew test
+```
+
+Manual Swagger requests use the real local application and PostgreSQL database; they are separate from these unit tests.
 
 ## Project structure
 
 - `src/main/java/com/villatusia/pms/property`: property entity, repository, service, controller, and request/response DTOs.
+- `src/main/java/com/villatusia/pms/reservation`: reservation entity, repository, service, controller, DTOs, and status.
 - `src/main/java/com/villatusia/pms/common/exception`: shared business exceptions and API exception handling.
 - `src/main/resources/db/migration`: versioned Flyway SQL migrations.
-- `src/main/resources/application.properties`: Spring Boot and database configuration.
-- `compose.yaml`: local PostgreSQL service, port, volume, and healthcheck.
+- `src/main/resources/application.properties`: Spring Boot and environment-based database configuration.
+- `compose.yaml`: local PostgreSQL service, port, volume, and health check.
 - `.env.example`: local environment template without a real password.
-- `ARCHITECTURE.md`: architecture, business rules, and remaining design decisions.
+- `ARCHITECTURE.md`: implemented architecture, business rules, and remaining design decisions.
 
 Only synthetic guest data belongs in this project.

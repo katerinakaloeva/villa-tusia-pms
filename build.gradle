@@ -1,3 +1,10 @@
+import org.gradle.api.file.ConfigurableFileCollection
+import org.gradle.api.tasks.InputFiles
+import org.gradle.api.tasks.PathSensitive
+import org.gradle.api.tasks.PathSensitivity
+import org.gradle.api.tasks.testing.Test
+import org.gradle.process.CommandLineArgumentProvider
+
 plugins {
 	id 'java'
 	id 'org.springframework.boot' version '4.1.1'
@@ -18,9 +25,17 @@ repositories {
 	mavenCentral()
 }
 
+configurations {
+	mockitoAgent {
+		canBeConsumed = false
+		canBeResolved = true
+	}
+}
+
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 
@@ -33,11 +48,29 @@ dependencies {
 	annotationProcessor 'org.projectlombok:lombok'
 
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	mockitoAgent('org.mockito:mockito-core') {
+		transitive = false
+	}
 	testCompileOnly 'org.projectlombok:lombok'
 	testAnnotationProcessor 'org.projectlombok:lombok'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
-tasks.named('test') {
+abstract class MockitoAgentProvider implements CommandLineArgumentProvider {
+	@InputFiles
+	@PathSensitive(PathSensitivity.RELATIVE)
+	abstract ConfigurableFileCollection getAgentJar()
+
+	@Override
+	Iterable<String> asArguments() {
+		["-javaagent:${agentJar.asPath}"]
+	}
+}
+
+tasks.withType(Test).configureEach {
 	useJUnitPlatform()
+
+	def agentProvider = objects.newInstance(MockitoAgentProvider)
+	agentProvider.agentJar.from(configurations.mockitoAgent)
+	jvmArgumentProviders.add(agentProvider)
 }

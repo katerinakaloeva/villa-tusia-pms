@@ -35,6 +35,101 @@ public class GlobalExceptionHandler {
                 .body(problem);
     }
 
+    @ExceptionHandler(InvalidReservationDatesException.class)
+    public ResponseEntity<ProblemDetail> handleInvalidReservationDates(
+            InvalidReservationDatesException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        problem.setTitle("Invalid reservation dates");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", exception.getCode());
+
+        return ResponseEntity
+                .badRequest()
+                .body(problem);
+    }
+
+    @ExceptionHandler(MinimumStayNotMetException.class)
+    public ResponseEntity<ProblemDetail> handleMinimumStayNotMet(
+            MinimumStayNotMetException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        problem.setTitle("Minimum stay not met");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", exception.getCode());
+
+        return ResponseEntity
+                .badRequest()
+                .body(problem);
+    }
+
+    @ExceptionHandler(ReservationUnavailableException.class)
+    public ResponseEntity<ProblemDetail> handleReservationUnavailable(
+            ReservationUnavailableException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        problem.setTitle("Reservation dates unavailable");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", exception.getCode());
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(problem);
+    }
+
+    @ExceptionHandler(PropertyInactiveException.class)
+    public ResponseEntity<ProblemDetail> handlePropertyInactive(
+            PropertyInactiveException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.CONFLICT,
+                exception.getMessage()
+        );
+
+        problem.setTitle("Property is inactive");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", exception.getCode());
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)
+                .body(problem);
+    }
+
+    @ExceptionHandler(GuestCountExceedsPropertyLimitException.class)
+    public ResponseEntity<ProblemDetail> handleGuestCountExceedsPropertyLimit(
+            GuestCountExceedsPropertyLimitException exception,
+            HttpServletRequest request
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(
+                HttpStatus.BAD_REQUEST,
+                exception.getMessage()
+        );
+
+        problem.setTitle("Guest count exceeds property limit");
+        problem.setInstance(URI.create(request.getRequestURI()));
+        problem.setProperty("code", exception.getCode());
+
+        return ResponseEntity
+                .badRequest()
+                .body(problem);
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<ProblemDetail> handleValidationError(
             MethodArgumentNotValidException exception,
