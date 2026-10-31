@@ -97,6 +97,10 @@ public class Reservation {
         this.currency = currency;
     }
 
+    public void cancel() {
+        this.status = ReservationStatus.CANCELLED;
+    }
+
     @PrePersist
     void beforeInsert() {
         Instant now = Instant.now();
