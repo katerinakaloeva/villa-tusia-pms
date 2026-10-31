@@ -10,8 +10,11 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -26,6 +29,9 @@ class ReservationServiceTest {
 
     @Mock
     private PropertyService propertyService;
+
+    @Mock
+    private Clock clock;
 
     @InjectMocks
     private ReservationService reservationService;
@@ -357,5 +363,79 @@ class ReservationServiceTest {
         );
 
         verify(reservationRepository, never()).save(any(Reservation.class));
+    }
+
+    @Test
+    void shouldCancelReservationMoreThanFourteenDaysBeforeCheckIn() {
+        when(clock.instant()).thenReturn(Instant.parse("2027-01-01T12:00:00Z"));
+        Reservation reservation = prepareCancellationReservation(
+                LocalDate.of(2027, 1, 16)
+        );
+        when(reservationRepository.save(any(Reservation.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        Reservation result = reservationService.cancel(1L, 10L);
+
+        assertEquals(ReservationStatus.CANCELLED, result.getStatus());
+        verify(reservationRepository).save(reservation);
+    }
+
+    @Test
+    void shouldRejectCancellationExactlyFourteenDaysBeforeCheckIn() {
+        when(clock.instant()).thenReturn(Instant.parse("2027-01-01T12:00:00Z"));
+        Reservation reservation = prepareCancellationReservation(
+                LocalDate.of(2027, 1, 15)
+        );
+
+        ReservationCancellationException exception = assertThrows(
+                ReservationCancellationException.class,
+                () -> reservationService.cancel(1L, 10L)
+        );
+
+        assertEquals("CANCELLATION_WINDOW_CLOSED", exception.getCode());
+        assertEquals(ReservationStatus.CONFIRMED, reservation.getStatus());
+        verify(reservationRepository, never()).save(any(Reservation.class));
+    }
+
+    @Test
+    void shouldRejectCancellationFourteenHoursBeforeCheckIn() {
+        // 23:00 UTC is 01:00 the next day in Europe/Athens during winter.
+        when(clock.instant()).thenReturn(Instant.parse("2027-01-01T23:00:00Z"));
+        Reservation reservation = prepareCancellationReservation(
+                LocalDate.of(2027, 1, 2)
+        );
+
+        assertThrows(
+                ReservationCancellationException.class,
+                () -> reservationService.cancel(1L, 10L)
+        );
+
+        assertEquals(ReservationStatus.CONFIRMED, reservation.getStatus());
+        verify(reservationRepository, never()).save(any(Reservation.class));
+    }
+
+    private Reservation prepareCancellationReservation(LocalDate checkInDate) {
+        Property property = mock(Property.class);
+        when(property.getId()).thenReturn(1L);
+        when(property.getTimeZone()).thenReturn("Europe/Athens");
+        when(property.getCancellationNoticeDays()).thenReturn(14);
+        when(propertyService.getById(1L)).thenReturn(property);
+
+        Reservation reservation = new Reservation(
+                property,
+                "Test Guest",
+                "guest@example.com",
+                "0000000000",
+                checkInDate,
+                checkInDate.plusDays(2),
+                2,
+                new BigDecimal("100.00"),
+                new BigDecimal("200.00"),
+                "EUR"
+        );
+        when(reservationRepository.findById(10L))
+                .thenReturn(Optional.of(reservation));
+
+        return reservation;
     }
 }

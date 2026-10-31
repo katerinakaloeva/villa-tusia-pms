@@ -7,13 +7,14 @@ A beginner-friendly Java REST API for managing the Villa Tusia vacation rental a
 - Read and update the property's settings.
 - Create a confirmed reservation for the whole property, without manual approval.
 - List a property's reservations, ordered by check-in date.
+- Cancel confirmed reservations before the configured cancellation deadline.
 - Check that the property is active, the dates are valid and available, guest count is within capacity, and the stay meets the property's minimum length.
 - Save the agreed nightly rate and total in each reservation. For example, three nights at EUR 100.00 total EUR 300.00.
 - Return structured errors for invalid requests and business-rule failures.
 - Apply database changes with Flyway migrations V1–V5 and validate the entity/table mapping with Hibernate.
 - Explore and call the endpoints through Swagger UI.
 
-The API currently supports reading reservations and creating them. Editing and cancelling reservations are not implemented. Authentication is not implemented; run this as a local demo with synthetic guest data, and do not expose it publicly or use real guest details.
+The API supports reading, creating, and cancelling reservations. Editing reservations is not implemented. Authentication is not implemented; run this as a local demo with synthetic guest data, and do not expose it publicly or use real guest details.
 
 ## Villa Tusia settings
 
@@ -28,7 +29,7 @@ The API currently supports reading reservations and creating them. Editing and c
 | Time zone | `Europe/Athens` |
 | Cancellation notice setting | 14 days |
 
-The 14-day cancellation notice is stored as a property setting. A reservation cancellation endpoint and its business rules are not implemented yet.
+The cancellation notice is stored as a property setting. Cancellation is allowed only before the local date that is the configured number of days before check-in. On that cutoff date and afterward, cancellation is rejected and the reservation remains confirmed.
 
 ## Requirements
 
@@ -87,6 +88,7 @@ With the application running, open [http://localhost:8080/swagger-ui/index.html]
 | `PUT` | `/api/properties/{propertyId}` | Replace the editable property settings; send the complete request body. |
 | `GET` | `/api/properties/{propertyId}/reservations` | List that property's reservations. An existing property with no reservations returns `[]`. |
 | `POST` | `/api/properties/{propertyId}/reservations` | Create and immediately confirm a reservation. |
+| `POST` | `/api/properties/{propertyId}/reservations/{reservationId}/cancel` | Cancel a reservation before the cancellation deadline. |
 
 Example request to create a reservation (use synthetic details and dates that are free in your local database):
 
@@ -108,11 +110,11 @@ Content-Type: application/json
 
 The service calculates the number of nights from the dates. It reads the nightly rate from the property, saves that agreed rate on the reservation, and calculates the total. With the current base rate, three nights total EUR 300.00. An overlapping confirmed reservation or a stay shorter than the property's minimum is rejected.
 
-Successful reads and property updates return `200 OK`; a reservation creation returns `201 Created`. Invalid input and a stay below the minimum return `400 Bad Request`, a missing property returns `404 Not Found`, and unavailable dates or an inactive property return `409 Conflict`.
+Successful reads, property updates, and cancellations return `200 OK`; creating a reservation returns `201 Created`. Invalid input and a stay below the minimum return `400 Bad Request`. A missing property or reservation returns `404 Not Found`. Unavailable dates, an inactive property, a closed cancellation window, or an already cancelled reservation return `409 Conflict`.
 
 ## Tests
 
-`ReservationServiceTest` contains 11 unit tests. They use Mockito mocks, so they test service rules without connecting to PostgreSQL. Run the test suite from Windows PowerShell with:
+`ReservationServiceTest` contains 14 unit tests. They use Mockito mocks, so they test service rules without connecting to PostgreSQL. Run the test suite from Windows PowerShell with:
 
 ```powershell
 .\gradlew.bat test

@@ -16,7 +16,7 @@ Authentication, Booking.com integration, seasonal pricing, payment processing, r
 
 ### Current status
 
-The project currently implements property configuration and basic reservation creation/listing:
+The project currently implements property configuration and reservation creation, listing, and cancellation:
 
 - Java 21, Spring Boot 4.1.1, Gradle Wrapper 9.7.1, Lombok, Mockito, and JUnit 6.
 - `Property` and `Reservation` JPA entities mapped to PostgreSQL tables.
@@ -24,12 +24,13 @@ The project currently implements property configuration and basic reservation cr
 - `GET /api/properties/{propertyId}` and full-replacement `PUT /api/properties/{propertyId}` endpoints.
 - `POST /api/properties/{propertyId}/reservations` creates and confirms a reservation immediately.
 - `GET /api/properties/{propertyId}/reservations` lists reservations ordered by check-in date.
+- `POST /api/properties/{propertyId}/reservations/{reservationId}/cancel` cancels a reservation before the configured deadline.
 - Request validation, property lookup, business-rule checks, and structured HTTP error responses.
 - Springdoc OpenAPI and Swagger UI for browsing and manually calling endpoints.
-- Eleven unit tests in `ReservationServiceTest`; they use Mockito mocks and do not connect to PostgreSQL.
+- Fourteen unit tests in `ReservationServiceTest`; they use Mockito mocks and do not connect to PostgreSQL.
 - Local PostgreSQL configuration through Docker Compose and `.env`.
 
-Reservation editing/cancellation, authentication, integration/API tests, frontend, and external booking integration are not implemented. This is a local learning demo and must not be exposed publicly with guest data because the API has no authentication.
+Reservation editing, authentication, integration/API tests, frontend, and external booking integration are not implemented. This is a local learning demo and must not be exposed publicly with guest data because the API has no authentication.
 
 ## 2. Application Structure
 
@@ -155,7 +156,7 @@ The implemented reservation statuses are:
 - `CONFIRMED`: the reservation is valid and blocks its dates.
 - `CANCELLED`: the reservation remains in the history but no longer blocks availability.
 
-A valid new reservation becomes confirmed immediately. It does not wait for manual acceptance. The enum contains `CANCELLED`, but there is no cancellation endpoint yet.
+A valid new reservation becomes confirmed immediately. It does not wait for manual acceptance. An allowed cancellation changes the status to `CANCELLED`; the reservation remains in the database and no longer blocks availability.
 
 A separate `COMPLETED` status will only be added if a feature requires it.
 
@@ -217,9 +218,9 @@ The application does not record or process payments. Payment requirements need a
 
 ### Cancellation
 
-The property stores a 14-day cancellation notice setting. Cancellation behavior and the exact deadline boundary are not implemented yet.
+The property stores the cancellation notice in days. Cancellation is allowed only before the local date that is the configured number of days before check-in. On the cutoff date and afterward, cancellation is rejected and the reservation remains confirmed. The current property setting is 14 days.
 
-When a cancellation endpoint is designed, cancellation should change the status to `CANCELLED` rather than delete the reservation. The allowed deadline boundary still needs to be agreed before implementation.
+Cancellation changes the status to `CANCELLED` rather than deleting the reservation. It is retained for history and no longer blocks availability.
 
 ### Changes to existing reservations
 
@@ -369,14 +370,15 @@ Credentials and real guest data must not be committed to the repository. See `RE
 | Database integration tests (future) | Queries, migrations, constraints, transactions, and concurrent writes against PostgreSQL. |
 | API tests (future) | Requests, validation, HTTP statuses, and error responses through the application. |
 
-The current `ReservationServiceTest` contains eleven unit tests for:
+The current `ReservationServiceTest` contains fourteen unit tests for:
 
 - Reading a property's reservations, returning an empty list, and rejecting a missing property.
 - Calculating the total from the nightly rate and number of nights.
 - Rejecting invalid dates, unavailable dates, guest counts above capacity, and inactive or missing properties.
 - Rejecting stays below the configured minimum and accepting a stay exactly at the minimum.
+- Cancelling more than 14 days before check-in and rejecting cancellation on the cutoff date or within the final 14 days.
 
-Still-important future scenarios include adjacent stays, cancelled reservations not blocking availability, cancellation deadlines, preservation of the agreed nightly rate after a property price change, reservation edits, and concurrent booking attempts.
+Still-important future scenarios include adjacent stays, database verification that cancelled reservations no longer block availability, preservation of the agreed nightly rate after a property price change, reservation edits, and concurrent booking attempts.
 
 Date-sensitive tests will use a controlled clock.
 

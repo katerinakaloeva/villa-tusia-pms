@@ -45,4 +45,17 @@ public class ReservationController {
                 .status(HttpStatus.CREATED)
                 .body(response);
     }
+
+    @PostMapping("/{reservationId}/cancel")
+    public ReservationResponseDto cancel(
+            @PathVariable long propertyId,
+            @PathVariable long reservationId
+    ) {
+        Reservation reservation = reservationService.cancel(
+                propertyId,
+                reservationId
+        );
+
+        return ReservationResponseDto.from(reservation);
+    }
 }
